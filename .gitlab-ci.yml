@@ -1,0 +1,381 @@
+variables:
+  IMAGE: $CI_PROJECT_PATH
+  REGISTRY: $CI_REGISTRY
+
+  CURL_TAG: 7.83.1
+  KANIKO_TAG: v1.7.0-debug
+  NODE_TAG: 16.15.0-bullseye-slim
+
+  APT_KEY: >
+    https://dl.google.com/linux/linux_signing_key.pub
+  APT_REPO: |
+    deb [arch=amd64] https://dl.google.com/linux/chrome/deb/ stable main
+
+stages:
+  - download
+  - test
+  - build
+  - pack
+  - verify
+
+download:apt:
+  stage: download
+  rules:
+    - if: $CI_COMMIT_BRANCH
+  variables:
+    APT_DOWNLOAD: >
+      google-chrome-stable
+      tini
+  image: $CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX/node:$NODE_TAG
+  script:
+    - mkdir -p .apt/keys .apt/cache/archives/partial .apt/state/lists/partial
+    - apt-get -q -y -o Dir::Cache=$PWD/.apt/cache -o Dir::State=$PWD/.apt/state
+      update
+    - |
+      if [ -n "$APT_REPO" ]; then
+        apt-get -q -y -o Dir::Cache=$PWD/.apt/cache -o Dir::State=$PWD/.apt/state \
+          install \
+          apt-transport-https curl gpg gpg-agent
+        for key in $APT_KEY; do
+          keyfile=$(basename "$key")
+          test -s .apt/keys/$keyfile || curl $key -o .apt/keys/$keyfile
+          apt-key add .apt/keys/$keyfile
+        done
+        echo "$APT_REPO" | while read repo; do
+          echo "$repo" >> /etc/apt/sources.list
+        done
+        apt-get -q -y -o Dir::Cache=$PWD/.apt/cache -o Dir::State=$PWD/.apt/state \
+          update
+      fi
+    - apt-get -q -y -o Dir::Cache=$PWD/.apt/cache -o Dir::State=$PWD/.apt/state
+      install --no-install-recommends --reinstall --download-only
+      $APT_DOWNLOAD
+  cache:
+    key: "download-apt-$CI_COMMIT_REF_SLUG"
+    paths:
+      - .apt/
+    policy: pull-push
+
+download:yarn:
+  stage: download
+  rules:
+    - if: $CI_COMMIT_BRANCH
+  variables:
+    YARN_CACHE_FOLDER: /tmp/yarn
+  image: $CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX/node:$NODE_TAG
+  script:
+    ## Versions
+    - node --version
+    - yarn --version
+    ## Yarn
+    - yarn check --integrity || yarn install --prefer-offline --pure-lockfile
+  cache:
+    key: "download-yarn-$CI_COMMIT_REF_SLUG"
+    paths:
+      - .yarn-offline-mirror/
+      - node_modules/
+    policy: pull-push
+
+test:audit:
+  stage: test
+  rules:
+    - if: $CI_COMMIT_BRANCH
+  image:
+    name: $CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX/node:$NODE_TAG
+    entrypoint: [""]
+  script:
+    ## Versions
+    - node --version
+    - yarn --version
+    ## Run tests
+    - yarn audit
+
+test:unit:
+  stage: test
+  needs:
+    - job: download:apt
+    - job: download:yarn
+  rules:
+    - if: $CI_COMMIT_BRANCH
+  variables:
+    APT_INSTALL: >
+      google-chrome-stable
+    YARN_CACHE_FOLDER: /dev/shm/yarn
+  image:
+    name: $CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX/node:$NODE_TAG
+    entrypoint: [""]
+  script:
+    ## APT install
+    - mkdir -p .apt/keys .apt/cache/archives/partial .apt/state/lists/partial
+    - apt-get -q -y -o Dir::Cache=$PWD/.apt/cache -o Dir::State=$PWD/.apt/state
+      update
+    - |
+      if [ -n "$APT_REPO" ]; then
+        apt-get -q -y -o Dir::Cache=$PWD/.apt/cache -o Dir::State=$PWD/.apt/state \
+          install \
+          apt-transport-https curl gpg gpg-agent
+        for key in $APT_KEY; do
+          keyfile=$(basename "$key")
+          test -s .apt/keys/$keyfile || curl $key -o .apt/keys/$keyfile
+          apt-key add .apt/keys/$keyfile
+        done
+        echo "$APT_REPO" | while read repo; do
+          echo "$repo" >> /etc/apt/sources.list
+        done
+        apt-get -q -y -o Dir::Cache=$PWD/.apt/cache -o Dir::State=$PWD/.apt/state \
+          update
+      fi
+    - apt-get -q -y -o Dir::Cache=$PWD/.apt/cache -o Dir::State=$PWD/.apt/state
+      install --no-install-recommends
+      $APT_INSTALL
+    ## Versions
+    - node --version
+    - yarn --version
+    - google-chrome-stable --version
+    ## Yarn install
+    - yarn check --integrity || yarn install --prefer-offline --pure-lockfile
+    ## Run tests
+    - yarn test:ci
+  cache:
+    - key: "download-apt-$CI_COMMIT_REF_SLUG"
+      paths:
+        - .apt/
+      policy: pull
+    - key: "download-yarn-$CI_COMMIT_REF_SLUG"
+      paths:
+        - .yarn-offline-mirror/
+        - node_modules/
+      policy: pull
+
+test:lint:
+  stage: test
+  needs:
+    - job: download:yarn
+  rules:
+    - if: $CI_COMMIT_BRANCH
+  variables:
+    YARN_CACHE_FOLDER: /dev/shm/yarn
+  image:
+    name: $CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX/node:$NODE_TAG
+    entrypoint: [""]
+  script:
+    ## Versions
+    - node --version
+    - yarn --version
+    ## Yarn install
+    - yarn check --integrity || yarn install --prefer-offline --pure-lockfile
+    ## Run tests
+    - yarn lint
+  cache:
+    - key: "download-yarn-$CI_COMMIT_REF_SLUG"
+      paths:
+        - .yarn-offline-mirror/
+        - node_modules/
+      policy: pull
+
+build:
+  stage: build
+  needs:
+    - job: test:audit
+    - job: test:lint
+    - job: test:unit
+  rules:
+    - if: $CI_COMMIT_BRANCH
+  variables:
+    APT_INSTALL: >
+      brotli
+    YARN_CACHE_FOLDER: /dev/shm/yarn
+  image:
+    name: $CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX/node:$NODE_TAG
+    entrypoint: [""]
+  script:
+    ## APT install
+    - mkdir -p .apt/keys .apt/cache/archives/partial .apt/state/lists/partial
+    - apt-get -q -y -o Dir::Cache=$PWD/.apt/cache -o Dir::State=$PWD/.apt/state
+      update
+    - |
+      if [ -n "$APT_REPO" ]; then
+        apt-get -q -y -o Dir::Cache=$PWD/.apt/cache -o Dir::State=$PWD/.apt/state \
+          install \
+          apt-transport-https curl gpg gpg-agent
+        for key in $APT_KEY; do
+          keyfile=$(basename "$key")
+          test -s .apt/keys/$keyfile || curl $key -o .apt/keys/$keyfile
+          apt-key add .apt/keys/$keyfile
+        done
+        echo "$APT_REPO" | while read repo; do
+          echo "$repo" >> /etc/apt/sources.list
+        done
+        apt-get -q -y -o Dir::Cache=$PWD/.apt/cache -o Dir::State=$PWD/.apt/state \
+          update
+      fi
+    - apt-get -q -y -o Dir::Cache=$PWD/.apt/cache -o Dir::State=$PWD/.apt/state
+      install --no-install-recommends
+      $APT_INSTALL
+    ## Versions
+    - node --version
+    - yarn --version
+    ## Yarn install
+    - yarn check --integrity || yarn install --prefer-offline --pure-lockfile
+    ## Prepare new version number
+    - major=$(node -p 'require("./package.json").version.split(/[.-]/)[0]')
+    - minor=$(LANG=C TZ=UTC date +%Y%m%d)
+    - patch=$CI_PIPELINE_ID
+    - |
+      prerelease=$(
+        case "$CI_COMMIT_REF_NAME" in
+          main|master);;
+          *) echo "-$CI_COMMIT_REF_SLUG";
+        esac
+      )
+    - newVersion="$major.$minor.$patch$prerelease"
+    ## Update package.json
+    - yarn version --new-version "$newVersion" --no-git-tag-version
+    ## Build
+    - yarn build:prod
+    ## Precompress
+    - find www -type f \( -name '*.css' -o -name '*.html' -o -name '*.js' -o -name '*.json' -o -name '*.webmanifest' \) -print0 |
+      xargs -0 gzip -9 -k
+    - find www -type f \( -name '*.css' -o -name '*.html' -o -name '*.js' -o -name '*.json' -o -name '*.webmanifest' \) -print0 |
+      xargs -0 brotli -Z
+    ## Version of container in manifest
+    - |
+      sed -i 's/^{$/{\n  "version": "'"${newVersion}"'",/' www/manifest.webmanifest
+  cache:
+    - key: "download-apt-$CI_COMMIT_REF_SLUG"
+      paths:
+        - .apt/
+      policy: pull
+    - key: "download-yarn-$CI_COMMIT_REF_SLUG"
+      paths:
+        - .yarn-offline-mirror/
+        - node_modules/
+      policy: pull
+    - key: "build-$CI_COMMIT_REF_SLUG"
+      paths:
+        - .angular/
+      policy: pull-push
+  artifacts:
+    paths:
+      - package.json
+      - www/
+    expire_in: 1 month
+
+.kaniko:
+  rules:
+    - if: $CI_COMMIT_BRANCH
+  image:
+    name: gcr.io/kaniko-project/executor:$KANIKO_TAG
+    entrypoint: [""]
+  script:
+    ## Required variables
+    - test -n "$DOCKERFILE"
+    ## Versions
+    - executor version
+    ## Docker credentials
+    - |
+      mkdir -p /kaniko/.docker
+      cat << JSON > /kaniko/.docker/config.json
+      {
+        "auths": {
+          "$CI_DEPENDENCY_PROXY_SERVER": {
+            "username": "$CI_DEPENDENCY_PROXY_USER",
+            "password": "$CI_DEPENDENCY_PROXY_PASSWORD"
+          },
+          "$CI_REGISTRY": {
+            "username": "$CI_REGISTRY_USER",
+            "password": "$CI_REGISTRY_PASSWORD"
+          }
+        }
+      }
+      JSON
+    ## Docker tags in TAGS variable; latest is for $LATEST branch
+    - |
+      push_args=$(
+        for tag in $TAGS; do
+          echo "--destination $REGISTRY/$IMAGE:$tag"
+        done
+        if [ "$LATEST" = "$CI_COMMIT_REF_NAME" ]; then
+          echo "--destination $REGISTRY/$IMAGE:latest"
+        fi
+      )
+    ## No tags = no push
+    - |
+      no_push_args=$(
+        echo "--cache-repo $CI_REGISTRY_IMAGE/cache"
+        echo "--no-push"
+      )
+    ## Build args from BUILD_ARGS variable
+    - |
+      build_args=$(
+        for arg in $BUILD_ARGS; do
+          echo "--build-arg $arg"
+        done
+      )
+    ## Build specific target stage only from TARGET variable
+    - |
+      target_args=$(
+        if [ -n "$TARGET" ]; then
+          echo "--target $TARGET"
+        fi
+      )
+    ## Kaniko build + tag + push
+    - >-
+      set -x;
+      executor --dockerfile $DOCKERFILE --context $PWD
+      ${push_args:-$no_push_args}
+      $build_args
+      $target_args
+      --build-arg DOCKER_IO_REGISTRY=$CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX
+      --single-snapshot
+      --skip-unused-stages
+      --snapshotMode=redo
+      --use-new-run
+
+pack:
+  extends: .kaniko
+  stage: pack
+  needs:
+    - job: build
+      artifacts: true
+  variables:
+    DOCKERFILE: $PWD/docker/Dockerfile
+    TAGS: >-
+      $CI_COMMIT_REF_SLUG-$CI_COMMIT_SHORT_SHA-$CI_PIPELINE_ID
+      $CI_COMMIT_REF_SLUG-$CI_COMMIT_SHORT_SHA
+      $CI_COMMIT_SHORT_SHA
+      $CI_COMMIT_REF_SLUG
+    LATEST: master
+
+verify:
+  stage: verify
+  needs:
+    - job: pack
+  rules:
+    - if: $CI_COMMIT_BRANCH
+      variables:
+        TAG: $CI_COMMIT_REF_SLUG-$CI_COMMIT_SHORT_SHA-$CI_PIPELINE_ID
+    - if: $CI_COMMIT_TAG
+      variables:
+        TAG: $CI_COMMIT_TAG
+  variables:
+    CURL_SILENT_OPTIONS: --silent --fail --show-error --max-time 5
+    CURL_VERBOSE_OPTIONS: --verbose --max-time 5
+    GIT_STRATEGY: none
+    PORT: 80
+    PATHNAME: /
+  services:
+    - name: $REGISTRY/$IMAGE:$TAG
+      alias: service
+  image: $CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX/curlimages/curl:$CURL_TAG
+  script:
+    # check the service: fail if port is stopped and do a health check
+    - |
+      while true; do
+        for i in $(seq 1 30); do
+          timeout 1 nc -z service $PORT || exit 1
+          curl $CURL_SILENT_OPTIONS 5 http://service:$PORT$PATHNAME && break 2
+          sleep 5
+        done
+        exit 1
+      done

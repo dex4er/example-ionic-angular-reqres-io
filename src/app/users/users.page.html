@@ -1,0 +1,51 @@
+<ion-header [translucent]="true">
+  <ion-toolbar>
+    <ion-title> App </ion-title>
+  </ion-toolbar>
+</ion-header>
+
+<ion-content [fullscreen]="true">
+  <ion-refresher slot="fixed" (ionRefresh)="refresh($event)">
+    <ion-refresher-content></ion-refresher-content>
+  </ion-refresher>
+
+  <ion-header collapse="condense">
+    <ion-toolbar>
+      <ion-title size="large"> Users </ion-title>
+    </ion-toolbar>
+  </ion-header>
+
+  <ion-card
+    *ngFor="let user of users | paginate : { itemsPerPage: itemsPerPage, currentPage: currentPage, totalItems: count }"
+  >
+    <ion-card-content>
+      <ion-list lines="none">
+        <ion-item>
+          <ion-avatar slot="start">
+            <img src="{{user.avatar}}" />
+          </ion-avatar>
+          <ion-label>
+            <h1>{{user.first_name}} {{user.last_name}}</h1>
+          </ion-label>
+        </ion-item>
+        <ion-item>
+          <ion-icon name="mail" slot="start"></ion-icon>
+          <ion-label>
+            <h2>{{user.email}}</h2>
+          </ion-label>
+        </ion-item>
+      </ion-list>
+    </ion-card-content>
+  </ion-card>
+</ion-content>
+
+<ion-footer>
+  <ion-toolbar>
+    <pagination-controls
+      class="paginator"
+      previousLabel="Prev"
+      nextLabel="Next"
+      (pageChange)="pageChange($event)"
+    ></pagination-controls>
+  </ion-toolbar>
+</ion-footer>
