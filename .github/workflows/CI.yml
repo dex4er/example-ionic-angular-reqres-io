@@ -9,6 +9,7 @@ jobs:
     runs-on: ubuntu-22.04
 
     steps:
+      - uses: actions/checkout@v3
       - uses: actions/cache@v3
         with:
           path: |
@@ -19,9 +20,13 @@ jobs:
       - run: ./.apt/get.sh install --download-only google-chrome-stable
 
   test:
+    needs:
+      - download
+
     runs-on: ubuntu-22.04
 
     steps:
+      - uses: actions/checkout@v3
       - run: mkdir -p .apt/keys .apt/cache/archives/partial .apt/state/lists/partial
       - uses: actions/cache@v3
         with:
