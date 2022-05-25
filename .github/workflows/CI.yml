@@ -1,0 +1,32 @@
+name: CI
+
+on:
+  - push
+  - pull_request
+
+jobs:
+  download:
+    runs-on: ubuntu-22.04
+
+    steps:
+      - uses: actions/cache@v3
+        with:
+          path: |
+            .apt/cache
+            .apt/state
+          key: ${{ runner.os }}-apt
+      - run: ./.apt/get.sh update
+      - run: ./.apt/get.sh install --download-only google-chrome-stable
+
+  test:
+    runs-on: ubuntu-22.04
+
+    steps:
+      - run: mkdir -p .apt/keys .apt/cache/archives/partial .apt/state/lists/partial
+      - uses: actions/cache@v3
+        with:
+          path: |
+            .apt/cache
+            .apt/state
+          key: ${{ runner.os }}-apt
+      - run: sudo ./.apt/get.sh install google-chrome-stable

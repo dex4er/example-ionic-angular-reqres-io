@@ -32,4 +32,6 @@ npm-debug.log*
 /plugins
 
 # not in .dockerignore
+/.apt/cache
+/.apt/state
 /www
