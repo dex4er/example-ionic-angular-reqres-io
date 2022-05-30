@@ -18,24 +18,26 @@ describe('UsersPage', () => {
   let httpClient: HttpClient;
   let httpTestingController: HttpTestingController;
 
-  beforeEach(waitForAsync(() => {
-    TestBed.configureTestingModule({
-      declarations: [UsersPage],
-      imports: [
-        HttpClientTestingModule,
-        NgxPaginationModule,
-        IonicModule.forRoot(),
-        RouterModule.forRoot([]),
-      ],
-    }).compileComponents();
+  beforeEach(
+    waitForAsync(() => {
+      TestBed.configureTestingModule({
+        declarations: [UsersPage],
+        imports: [
+          HttpClientTestingModule,
+          NgxPaginationModule,
+          IonicModule.forRoot(),
+          RouterModule.forRoot([]),
+        ],
+      }).compileComponents();
 
-    fixture = TestBed.createComponent(UsersPage);
-    component = fixture.componentInstance;
-    fixture.detectChanges();
+      fixture = TestBed.createComponent(UsersPage);
+      component = fixture.componentInstance;
+      fixture.detectChanges();
 
-    httpClient = TestBed.inject(HttpClient);
-    httpTestingController = TestBed.inject(HttpTestingController);
-  }));
+      httpClient = TestBed.inject(HttpClient);
+      httpTestingController = TestBed.inject(HttpTestingController);
+    })
+  );
 
   it('should create', () => {
     expect(component).toBeTruthy();
