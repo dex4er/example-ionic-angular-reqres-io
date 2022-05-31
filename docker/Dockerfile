@@ -2,15 +2,9 @@
 ## $ yarn build:prod
 ## $ docker build -f docker/Dockerfile .
 
-## Location of containers
-ARG DOCKER_IO_REGISTRY=docker.io
-
-## Versions
-ARG CADDY_TAG=2.5.1-alpine
-
 ## This stage requires directory with artifacts which has to be **not** in .dockerignore
 
-FROM ${DOCKER_IO_REGISTRY}/caddy:${CADDY_TAG} as image
+FROM caddy:2.5.1-alpine as image
 
 ## Copy the built artifacts
 COPY ./www/ /srv/www/

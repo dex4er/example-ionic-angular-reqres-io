@@ -32,3 +32,64 @@ jobs:
           check-mode: all
 
       - run: npm run test:ci
+
+  build:
+    runs-on: ubuntu-22.04
+
+    needs: test
+
+    steps:
+      - uses: actions/checkout@v3
+
+      - uses: actions/setup-node@v3
+        with:
+          node-version: 16.15.0
+          cache: npm
+      - run: npm ci
+
+      - run: npm run build:prod
+
+      - uses: actions/upload-artifact@v3
+        with:
+          name: www
+          path: |
+            www
+
+  pack:
+    runs-on: ubuntu-22.04
+
+    needs: build
+
+    container:
+      image: gcr.io/kaniko-project/executor:v1.8.1-debug
+      env:
+        NODE_ENV: development
+      volumes:
+        - .:/workspace
+
+    steps:
+      - uses: actions/checkout@v3
+
+      - uses: actions/download-artifact@v3
+        with:
+          name: www
+
+      - run: mkdir -p /kaniko/.docker
+      - run: |
+          cat << JSON > /kaniko/.docker/config.json
+          {
+            "auths": {
+              "ghcr.io": {
+                "auth": "$(echo ${{ github.actor }}:${{ secrets.GITHUB_TOKEN }} | base64)"
+              }
+            }
+          }
+          JSON
+      - run: /kaniko/executor
+          --dockerfile=/workspace/docker/Dockerfile
+          --context=dir:///workspace/
+          --destination=ghcr.io/${GITHUB_REPOSITORY}:${GITHUB_REF_NAME//\//-}-${GITHUB_SHA::7}-${GITHUB_RUN_NUMBER}
+          --single-snapshot
+          --skip-unused-stages
+          --snapshotMode=redo
+          --use-new-run
