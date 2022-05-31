@@ -1,5 +1,5 @@
 ## Usage:
-## $ yarn build:prod
+## $ npm run build:prod
 ## $ docker build -f docker/Dockerfile .
 
 ## This stage requires directory with artifacts which has to be **not** in .dockerignore

@@ -28,6 +28,7 @@ npm-debug.log*
 /.yarn-offline-mirror
 /coverage
 /dist
+/docker/image.tar
 /node_modules
 /platforms
 /plugins
