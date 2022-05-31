@@ -60,13 +60,6 @@ jobs:
 
     needs: build
 
-    container:
-      image: gcr.io/kaniko-project/executor:v1.8.1-debug
-      env:
-        NODE_ENV: development
-      volumes:
-        - ${{ github.workspace }}:/workspace
-
     steps:
       - uses: actions/checkout@v3
 
@@ -74,18 +67,12 @@ jobs:
         with:
           name: www
 
-      - run: mkdir -p /kaniko/.docker
-      - run: |
-          cat << JSON > /kaniko/.docker/config.json
-          {
-            "auths": {
-              "ghcr.io": {
-                "auth": "$(echo ${{ github.actor }}:${{ secrets.GITHUB_TOKEN }} | base64)"
-              }
-            }
-          }
-          JSON
-      - run: /kaniko/executor
+      - run: docker login "ghcr.io" -u "${GITHUB_ACTOR}" --password-stdin <<< "${{ secrets.GITHUB_TOKEN }}"
+
+      - run: docker run
+          -v ${GITHUB_WORKSPACE}:/workspace
+          -v ${HOME}/.docker:/kaniko/.docker
+          gcr.io/kaniko-project/executor:v1.8.1-debug
           --dockerfile=/workspace/docker/Dockerfile
           --context=dir:///workspace/
           --destination=ghcr.io/${GITHUB_REPOSITORY}:${GITHUB_REF_NAME//\//-}-${GITHUB_SHA::7}-${GITHUB_RUN_NUMBER}
